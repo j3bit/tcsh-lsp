@@ -1,0 +1,6 @@
+Script 0..58 ""
+  IfBlock 0..58 "if ( $status == 0 ) then"
+    Command { name: "echo" } 27..34 "echo ok"
+    Else 35..39 "else"
+    Command { name: "echo" } 42..51 "echo fail"
+    UnknownEnd { word: "endif" } 52..57 "endif"

@@ -1,0 +1,8 @@
+Script 0..80 ""
+  SwitchBlock 0..80 "switch ( $mode )"
+    Case 17..27 "case fast:"
+    Command { name: "echo" } 30..39 "echo fast"
+    Breaksw 42..49 "breaksw"
+    Label { name: "default" } 50..58 "default:"
+    Command { name: "echo" } 61..73 "echo default"
+    UnknownEnd { word: "endsw" } 74..79 "endsw"

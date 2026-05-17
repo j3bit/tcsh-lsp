@@ -1,0 +1,6 @@
+Script 0..39 ""
+  ForeachBlock 0..22 "foreach item ( a b c )"
+    ! MissingEnd 0..22 missing end for block
+    Command { name: "echo" } 25..38 "echo $item 01"
+diagnostics:
+MissingEnd 0..22 missing end for block

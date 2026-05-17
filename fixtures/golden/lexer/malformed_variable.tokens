@@ -1,0 +1,11 @@
+Word 0..4 "echo"
+Whitespace 4..5 " "
+Error 5..8 "${}"
+Newline 8..9 "\n"
+Word 9..13 "echo"
+Whitespace 13..14 " "
+Error 14..15 "$"
+Newline 15..16 "\n"
+errors:
+MalformedVariableExpansion 5..8 malformed braced variable expansion
+MalformedVariableExpansion 14..15 malformed variable expansion

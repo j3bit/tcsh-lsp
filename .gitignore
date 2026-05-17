@@ -1,0 +1,22 @@
+# Rust build outputs
+/target/
+/dist/
+
+# Local editor / OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Local logs and temporary runtime output
+*.log
+*.tmp
+*.temp
+
+# Local environment/secrets
+.env
+.env.*
+!.env.example
+
+# Local agent/orchestration state
+/.omx/

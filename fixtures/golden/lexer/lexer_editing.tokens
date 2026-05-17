@@ -1,0 +1,16 @@
+Word 0..2 "if"
+Whitespace 2..3 " "
+LeftParen 3..4 "("
+Whitespace 4..5 " "
+VariableExpansion 5..10 "$flag"
+Whitespace 10..11 " "
+RightParen 11..12 ")"
+Whitespace 12..13 " "
+Word 13..17 "then"
+Newline 17..18 "\n"
+Whitespace 18..20 "  "
+Word 20..24 "echo"
+Whitespace 24..25 " "
+Error 25..68 "\"still typing\n  set path = ( /bin /usr/bin\n"
+errors:
+UnterminatedDoubleQuote 25..68 unterminated double quote

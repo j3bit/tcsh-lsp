@@ -1,0 +1,5 @@
+Script 0..6 ""
+  UnknownEnd { word: "endif" } 0..5 "endif"
+    ! UnmatchedEnd 0..5 unmatched block terminator
+diagnostics:
+UnmatchedEnd 0..5 unmatched block terminator

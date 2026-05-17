@@ -1,0 +1,4 @@
+Script 0..40 ""
+  ForeachBlock 0..40 "foreach item ( a b c )"
+    Command { name: "echo" } 25..35 "echo $item"
+    UnknownEnd { word: "end" } 36..39 "end"

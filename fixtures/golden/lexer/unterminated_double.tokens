@@ -1,0 +1,5 @@
+Word 0..4 "echo"
+Whitespace 4..5 " "
+Error 5..19 "\"unterminated\n"
+errors:
+UnterminatedDoubleQuote 5..19 unterminated double quote
