@@ -6,5 +6,6 @@
 - Some semantic diagnostics, including unresolved `goto`, are intentionally conservative by default. The analyzer still records labels and goto references for navigation, but publishDiagnostics avoids noisy reachability/context guesses unless a stricter category is added later.
 - Cancellation is represented by a registry consulted by expensive providers; `tower-lsp` does not expose every LSP cancellation path directly in the current integration.
 - Formatting is indentation-only. It does not normalize quoting, command layout, redirection spacing, or complex command continuations.
+- Parenthesized command sequences are segmented for recovery and semantic visibility, but they are not modeled as a fully nested tcsh command-group AST yet. The segmenter follows tcsh command-sequence boundaries while preserving `if`/`while`/`exit` expression operators inside expression parentheses.
 - Rename is limited to certain variables, aliases, and labels in open/indexed documents. It deliberately rejects ambiguous or invalid shell names.
 - codeLens and inlayHint are not advertised yet because no low-noise tcsh/csh subset has been proven useful enough to enable by default.
