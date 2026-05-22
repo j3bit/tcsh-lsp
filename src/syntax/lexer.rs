@@ -105,7 +105,7 @@ impl Lexer<'_> {
                     self.push(TokenKind::Separator, start, self.cursor);
                     self.at_command_start = true;
                 }
-                '|' => self.consume_pipe(start),
+                '|' => self.consume_pipe_or_or_separator(start),
                 '<' | '>' => self.consume_redirection(start),
                 '(' => {
                     self.bump_char();
@@ -143,8 +143,14 @@ impl Lexer<'_> {
         self.push(TokenKind::Comment, start, self.cursor);
     }
 
-    fn consume_pipe(&mut self, start: usize) {
+    fn consume_pipe_or_or_separator(&mut self, start: usize) {
         self.bump_char();
+        if self.peek_char() == Some('|') {
+            self.bump_char();
+            self.push(TokenKind::Separator, start, self.cursor);
+            self.at_command_start = true;
+            return;
+        }
         if self.peek_char() == Some('&') {
             self.bump_char();
         }
@@ -491,6 +497,21 @@ echo !$var
             "! before $var should not swallow the variable expansion: {:#?}",
             result.tokens
         );
+    }
+
+    #[test]
+    fn double_pipe_is_sequence_separator_not_pipeline() {
+        let result = lex("echo one || echo two\necho one |& cat\necho one | cat\n");
+        assert!(result.errors.is_empty(), "unexpected lex errors: {:#?}", result.errors);
+        assert!(result.tokens.iter().any(|token| {
+            token.kind == TokenKind::Separator && token.text == "||"
+        }));
+        assert!(result.tokens.iter().any(|token| {
+            token.kind == TokenKind::Pipe && token.text == "|&"
+        }));
+        assert!(result.tokens.iter().any(|token| {
+            token.kind == TokenKind::Pipe && token.text == "|"
+        }));
     }
 
     #[test]
