@@ -187,7 +187,19 @@ fn command_segments(tokens: &[Token]) -> Vec<Segment<'_>> {
                 paren_depth = paren_depth.saturating_sub(1);
                 current.push(token);
             }
-            TokenKind::Newline | TokenKind::Separator if paren_depth == 0 => {
+            TokenKind::Newline => {
+                let filtered = trim_trivia(current);
+                if !filtered.is_empty() {
+                    segments.push(Segment {
+                        tokens: filtered,
+                        end: token.span.end,
+                    });
+                }
+                current = Vec::new();
+                last_end = token.span.end;
+                paren_depth = 0;
+            }
+            TokenKind::Separator if paren_depth == 0 => {
                 let filtered = trim_trivia(current);
                 if !filtered.is_empty() {
                     segments.push(Segment {
@@ -382,6 +394,24 @@ fn format_node(node: &Node, depth: usize, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn newline_still_recovers_after_unclosed_parenthesis() {
+        let parsed = parse(
+            "if ( $x > 0
+echo $foo
+endif
+",
+        );
+        assert!(
+            parsed
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == ParseDiagnosticCode::UnmatchedEnd),
+            "unclosed parenthesis should not merge following lines and hide unmatched endif: {:#?}",
+            parsed.diagnostics
+        );
+    }
 
     #[test]
     fn if_condition_with_and_separator_inside_parentheses_stays_one_block() {
