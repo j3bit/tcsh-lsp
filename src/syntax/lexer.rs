@@ -234,6 +234,11 @@ impl Lexer<'_> {
 
     fn consume_history_expansion(&mut self, start: usize) {
         self.bump_char();
+        if self.peek_char() == Some('$') && self.dollar_starts_expansion_after_bang() {
+            self.push(TokenKind::Word, start, self.cursor);
+            self.at_command_start = false;
+            return;
+        }
         while let Some(ch) = self.peek_char() {
             if ch.is_whitespace()
                 || matches!(
@@ -247,6 +252,14 @@ impl Lexer<'_> {
         }
         self.push(TokenKind::Word, start, self.cursor);
         self.at_command_start = false;
+    }
+
+    fn dollar_starts_expansion_after_bang(&self) -> bool {
+        let after_dollar = self.cursor + '$'.len_utf8();
+        let Some(ch) = self.input[after_dollar..].chars().next() else {
+            return false;
+        };
+        matches!(ch, '{' | '(') || is_var_start(ch) || matches!(ch, '?' | '#' | '$' | '<')
     }
 
     fn consume_dollar(&mut self, start: usize) {
@@ -451,6 +464,34 @@ pub fn format_tokens_for_golden(result: &LexResult) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bang_before_variable_preserves_variable_expansion_token() {
+        let result = lex("if ( !$?prompt ) then
+echo !$var
+");
+        assert!(
+            result.errors.is_empty(),
+            "bang-variable syntax should not produce lex errors: {:#?}",
+            result.errors
+        );
+        assert!(
+            result
+                .tokens
+                .iter()
+                .any(|token| token.kind == TokenKind::VariableExpansion && token.text == "$?prompt"),
+            "! before $?prompt should not swallow the variable expansion: {:#?}",
+            result.tokens
+        );
+        assert!(
+            result
+                .tokens
+                .iter()
+                .any(|token| token.kind == TokenKind::VariableExpansion && token.text == "$var"),
+            "! before $var should not swallow the variable expansion: {:#?}",
+            result.tokens
+        );
+    }
 
     #[test]
     fn history_expansions_do_not_emit_malformed_variable_errors() {
