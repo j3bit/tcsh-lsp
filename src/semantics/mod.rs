@@ -391,6 +391,26 @@ echo $count
     }
 
     #[test]
+    fn grouped_sequence_later_alias_remains_visible_to_semantics() {
+        let parsed = parse("( echo one ; alias ll 'ls -l' )\nll /tmp\n");
+        let context =
+            AnalysisContext::new(std::env::current_dir().unwrap(), TcshLspConfig::default());
+        let model = analyze(&parsed, &context);
+
+        assert!(
+            model
+                .symbols
+                .iter()
+                .any(|symbol| symbol.kind == SymbolKind::Alias && symbol.name == "ll")
+        );
+        assert!(
+            model.references.iter().any(
+                |reference| reference.kind == ReferenceKind::AliasUse && reference.name == "ll"
+            )
+        );
+    }
+
+    #[test]
     fn resolves_static_source_and_keeps_dynamic_uncertain() {
         let root = std::env::temp_dir().join(format!("tcsh-lsp-source-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();

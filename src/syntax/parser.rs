@@ -345,4 +345,29 @@ endif
         );
         assert!(matches!(parsed.root.children[0].kind, NodeKind::IfBlock));
     }
+
+    #[test]
+    fn grouped_sequence_separator_keeps_later_commands_recoverable() {
+        let parsed = parse("( echo one ; alias ll 'ls -l' )\nll /tmp\n");
+
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "grouped command sequence should parse cleanly: {:#?}",
+            parsed.diagnostics
+        );
+        assert!(
+            parsed
+                .root
+                .children
+                .iter()
+                .any(|node| matches!(node.kind, NodeKind::Alias))
+        );
+        assert!(
+            parsed
+                .root
+                .children
+                .iter()
+                .any(|node| { matches!(&node.kind, NodeKind::Command { name } if name == "ll") })
+        );
+    }
 }
