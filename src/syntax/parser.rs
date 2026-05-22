@@ -175,9 +175,19 @@ fn command_segments(tokens: &[Token]) -> Vec<Segment<'_>> {
     let mut segments = Vec::new();
     let mut current = Vec::new();
     let mut last_end = 0;
+    let mut paren_depth = 0usize;
+
     for token in tokens {
         match token.kind {
-            TokenKind::Newline | TokenKind::Separator => {
+            TokenKind::LeftParen => {
+                paren_depth += 1;
+                current.push(token);
+            }
+            TokenKind::RightParen => {
+                paren_depth = paren_depth.saturating_sub(1);
+                current.push(token);
+            }
+            TokenKind::Newline | TokenKind::Separator if paren_depth == 0 => {
                 let filtered = trim_trivia(current);
                 if !filtered.is_empty() {
                     segments.push(Segment {
@@ -366,5 +376,21 @@ fn format_node(node: &Node, depth: usize, out: &mut String) {
     }
     for child in &node.children {
         format_node(child, depth + 1, out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn if_condition_with_and_separator_inside_parentheses_stays_one_block() {
+        let parsed = parse("if ( -e ~/.tcshrc && $count >= 3 ) then\n  echo ok\nendif\n");
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "if condition should not be split at && inside parentheses: {:#?}",
+            parsed.diagnostics
+        );
+        assert!(matches!(parsed.root.children[0].kind, NodeKind::IfBlock));
     }
 }

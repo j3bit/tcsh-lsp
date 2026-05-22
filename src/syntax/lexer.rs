@@ -122,6 +122,7 @@ impl Lexer<'_> {
                 '"' => self.consume_double_quote(start),
                 '`' => self.consume_backtick(start),
                 '$' => self.consume_dollar(start),
+                '!' => self.consume_history_expansion(start),
                 '*' | '?' | '[' | ']' | '{' | '}' => {
                     self.bump_char();
                     self.push(TokenKind::Glob, start, self.cursor);
@@ -229,6 +230,23 @@ impl Lexer<'_> {
             LexErrorCode::UnterminatedBacktick,
             "unterminated backtick command substitution",
         );
+    }
+
+    fn consume_history_expansion(&mut self, start: usize) {
+        self.bump_char();
+        while let Some(ch) = self.peek_char() {
+            if ch.is_whitespace()
+                || matches!(
+                    ch,
+                    '#' | ';' | '&' | '|' | '<' | '>' | '(' | ')' | '\'' | '"' | '`' | '\\'
+                )
+            {
+                break;
+            }
+            self.bump_char();
+        }
+        self.push(TokenKind::Word, start, self.cursor);
+        self.at_command_start = false;
     }
 
     fn consume_dollar(&mut self, start: usize) {
@@ -428,4 +446,22 @@ pub fn format_tokens_for_golden(result: &LexResult) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_expansions_do_not_emit_malformed_variable_errors() {
+        let result = lex("echo !$ !! !:1 !-2 %1\n");
+        assert!(
+            result.errors.is_empty(),
+            "history/job syntax should not produce lex errors: {:#?}",
+            result.errors
+        );
+        assert!(result.tokens.iter().any(|token| token.text == "!$"));
+        assert!(result.tokens.iter().any(|token| token.text == "!!"));
+        assert!(result.tokens.iter().any(|token| token.text == "!:1"));
+    }
 }
