@@ -1,4 +1,5 @@
 use crate::syntax::lexer::{Token, TokenKind, lex};
+use crate::syntax::segmenter::command_segments;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,85 +164,6 @@ pub fn parse(input: &str) -> ParseResult {
     }
 
     ParseResult { root, diagnostics }
-}
-
-#[derive(Debug)]
-struct Segment<'a> {
-    tokens: Vec<&'a Token>,
-    end: usize,
-}
-
-fn command_segments(tokens: &[Token]) -> Vec<Segment<'_>> {
-    let mut segments = Vec::new();
-    let mut current = Vec::new();
-    let mut last_end = 0;
-    let mut paren_depth = 0usize;
-
-    for token in tokens {
-        match token.kind {
-            TokenKind::LeftParen => {
-                paren_depth += 1;
-                current.push(token);
-            }
-            TokenKind::RightParen => {
-                paren_depth = paren_depth.saturating_sub(1);
-                current.push(token);
-            }
-            TokenKind::Newline => {
-                let filtered = trim_trivia(current);
-                if !filtered.is_empty() {
-                    segments.push(Segment {
-                        tokens: filtered,
-                        end: token.span.end,
-                    });
-                }
-                current = Vec::new();
-                last_end = token.span.end;
-                paren_depth = 0;
-            }
-            TokenKind::Separator if paren_depth == 0 => {
-                let filtered = trim_trivia(current);
-                if !filtered.is_empty() {
-                    segments.push(Segment {
-                        tokens: filtered,
-                        end: token.span.end,
-                    });
-                }
-                current = Vec::new();
-                last_end = token.span.end;
-            }
-            TokenKind::Whitespace | TokenKind::Comment => current.push(token),
-            _ => current.push(token),
-        }
-    }
-    let filtered = trim_trivia(current);
-    if !filtered.is_empty() {
-        let end = filtered
-            .last()
-            .map(|token| token.span.end)
-            .unwrap_or(last_end);
-        segments.push(Segment {
-            tokens: filtered,
-            end,
-        });
-    }
-    segments
-}
-
-fn trim_trivia(mut tokens: Vec<&Token>) -> Vec<&Token> {
-    while tokens
-        .first()
-        .is_some_and(|token| matches!(token.kind, TokenKind::Whitespace | TokenKind::Comment))
-    {
-        tokens.remove(0);
-    }
-    while tokens
-        .last()
-        .is_some_and(|token| matches!(token.kind, TokenKind::Whitespace | TokenKind::Comment))
-    {
-        tokens.pop();
-    }
-    tokens
 }
 
 fn classify_segment(input: &str, tokens: &[&Token]) -> Node {
