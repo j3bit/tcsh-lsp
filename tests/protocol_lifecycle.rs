@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -397,6 +398,138 @@ fn initialize_shutdown_exit_lifecycle() -> Result<()> {
     })?;
     assert_eq!(shutdown["result"], Value::Null);
 
+    stdin.write_all(&frame(&json!({"jsonrpc":"2.0","method":"exit"})))?;
+    stdin.flush()?;
+    drop(stdin);
+
+    let status = child
+        .wait_timeout(Duration::from_secs(5))?
+        .context("server did not exit")?;
+    assert!(status.success(), "server exit status: {status}");
+    Ok(())
+}
+
+#[test]
+fn dogfood_examples_publish_empty_diagnostics_and_answer_read_only_requests() -> Result<()> {
+    let server = env!("CARGO_BIN_EXE_tcsh-lsp");
+    let mut child = Command::new(server)
+        .arg("--stdio")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawn tcsh-lsp")?;
+
+    let mut stdin = child.stdin.take().context("child stdin")?;
+    let stdout = child.stdout.take().context("child stdout")?;
+    let rx = spawn_stdout_reader(stdout);
+
+    stdin.write_all(&frame(&json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "processId": null,
+            "rootUri": null,
+            "capabilities": {},
+            "clientInfo": {"name": "tcsh-lsp-dogfood-test", "version": "0"}
+        }
+    })))?;
+    stdin.flush()?;
+    let _init = recv_matching(&rx, Duration::from_secs(10), |message| {
+        message.get("id") == Some(&json!(1))
+    })?;
+
+    stdin.write_all(&frame(&json!({
+        "jsonrpc": "2.0",
+        "method": "initialized",
+        "params": {}
+    })))?;
+
+    let fixtures = [
+        "fixtures/corpus/parser/valid/tree_sitter_sample.tcsh",
+        "fixtures/corpus/parser/valid/tree_sitter_showcase.tcsh",
+    ];
+
+    let mut next_id = 10;
+    for path in fixtures {
+        let text = fs::read_to_string(path).with_context(|| format!("read {path}"))?;
+        let uri = format!("file://{}", std::env::current_dir()?.join(path).display());
+        stdin.write_all(&frame(&json!({
+            "jsonrpc":"2.0",
+            "method":"textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "tcsh",
+                    "version": 1,
+                    "text": text
+                }
+            }
+        })))?;
+        stdin.flush()?;
+
+        let diagnostics = recv_matching(&rx, Duration::from_secs(10), |message| {
+            message.get("method") == Some(&json!("textDocument/publishDiagnostics"))
+                && message["params"]["uri"] == json!(uri)
+        })?;
+        assert_eq!(
+            diagnostics["params"]["diagnostics"]
+                .as_array()
+                .map(Vec::len),
+            Some(0),
+            "{path} should publish empty diagnostics"
+        );
+
+        next_id += 1;
+        let document_symbol_id = next_id;
+        next_id += 1;
+        let folding_id = next_id;
+        next_id += 1;
+        let semantic_tokens_id = next_id;
+
+        stdin.write_all(&frame(&json!({
+            "jsonrpc":"2.0",
+            "id": document_symbol_id,
+            "method":"textDocument/documentSymbol",
+            "params": {"textDocument": {"uri": uri}}
+        })))?;
+        stdin.write_all(&frame(&json!({
+            "jsonrpc":"2.0",
+            "id": folding_id,
+            "method":"textDocument/foldingRange",
+            "params": {"textDocument": {"uri": uri}}
+        })))?;
+        stdin.write_all(&frame(&json!({
+            "jsonrpc":"2.0",
+            "id": semantic_tokens_id,
+            "method":"textDocument/semanticTokens/full",
+            "params": {"textDocument": {"uri": uri}}
+        })))?;
+        stdin.flush()?;
+
+        let symbols = recv_matching(&rx, Duration::from_secs(10), |message| {
+            message.get("id") == Some(&json!(document_symbol_id))
+        })?;
+        assert!(symbols["result"].as_array().is_some());
+        let folding = recv_matching(&rx, Duration::from_secs(10), |message| {
+            message.get("id") == Some(&json!(folding_id))
+        })?;
+        assert!(folding["result"].as_array().is_some());
+        let semantic_tokens = recv_matching(&rx, Duration::from_secs(10), |message| {
+            message.get("id") == Some(&json!(semantic_tokens_id))
+        })?;
+        assert!(semantic_tokens["result"]["data"].as_array().is_some());
+    }
+
+    stdin.write_all(&frame(
+        &json!({"jsonrpc":"2.0","id":99,"method":"shutdown"}),
+    ))?;
+    stdin.flush()?;
+    let shutdown = recv_matching(&rx, Duration::from_secs(10), |message| {
+        message.get("id") == Some(&json!(99))
+    })?;
+    assert_eq!(shutdown["result"], Value::Null);
     stdin.write_all(&frame(&json!({"jsonrpc":"2.0","method":"exit"})))?;
     stdin.flush()?;
     drop(stdin);

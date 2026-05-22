@@ -18,5 +18,7 @@
 .env.*
 !.env.example
 
-# Local agent/orchestration state
+# Local worktrees and agent/orchestration state
+/.worktrees/
+/worktrees/
 /.omx/

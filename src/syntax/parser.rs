@@ -1,4 +1,5 @@
 use crate::syntax::lexer::{Token, TokenKind, lex};
+use crate::syntax::segmenter::command_segments;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,63 +166,6 @@ pub fn parse(input: &str) -> ParseResult {
     ParseResult { root, diagnostics }
 }
 
-#[derive(Debug)]
-struct Segment<'a> {
-    tokens: Vec<&'a Token>,
-    end: usize,
-}
-
-fn command_segments(tokens: &[Token]) -> Vec<Segment<'_>> {
-    let mut segments = Vec::new();
-    let mut current = Vec::new();
-    let mut last_end = 0;
-    for token in tokens {
-        match token.kind {
-            TokenKind::Newline | TokenKind::Separator => {
-                let filtered = trim_trivia(current);
-                if !filtered.is_empty() {
-                    segments.push(Segment {
-                        tokens: filtered,
-                        end: token.span.end,
-                    });
-                }
-                current = Vec::new();
-                last_end = token.span.end;
-            }
-            TokenKind::Whitespace | TokenKind::Comment => current.push(token),
-            _ => current.push(token),
-        }
-    }
-    let filtered = trim_trivia(current);
-    if !filtered.is_empty() {
-        let end = filtered
-            .last()
-            .map(|token| token.span.end)
-            .unwrap_or(last_end);
-        segments.push(Segment {
-            tokens: filtered,
-            end,
-        });
-    }
-    segments
-}
-
-fn trim_trivia(mut tokens: Vec<&Token>) -> Vec<&Token> {
-    while tokens
-        .first()
-        .is_some_and(|token| matches!(token.kind, TokenKind::Whitespace | TokenKind::Comment))
-    {
-        tokens.remove(0);
-    }
-    while tokens
-        .last()
-        .is_some_and(|token| matches!(token.kind, TokenKind::Whitespace | TokenKind::Comment))
-    {
-        tokens.pop();
-    }
-    tokens
-}
-
 fn classify_segment(input: &str, tokens: &[&Token]) -> Node {
     let start = tokens.first().map(|token| token.span.start).unwrap_or(0);
     let end = tokens.last().map(|token| token.span.end).unwrap_or(start);
@@ -366,5 +310,64 @@ fn format_node(node: &Node, depth: usize, out: &mut String) {
     }
     for child in &node.children {
         format_node(child, depth + 1, out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn newline_still_recovers_after_unclosed_parenthesis() {
+        let parsed = parse(
+            "if ( $x > 0
+echo $foo
+endif
+",
+        );
+        assert!(
+            parsed
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == ParseDiagnosticCode::UnmatchedEnd),
+            "unclosed parenthesis should not merge following lines and hide unmatched endif: {:#?}",
+            parsed.diagnostics
+        );
+    }
+
+    #[test]
+    fn if_condition_with_and_separator_inside_parentheses_stays_one_block() {
+        let parsed = parse("if ( -e ~/.tcshrc && $count >= 3 ) then\n  echo ok\nendif\n");
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "if condition should not be split at && inside parentheses: {:#?}",
+            parsed.diagnostics
+        );
+        assert!(matches!(parsed.root.children[0].kind, NodeKind::IfBlock));
+    }
+
+    #[test]
+    fn grouped_sequence_separator_keeps_later_commands_recoverable() {
+        let parsed = parse("( echo one ; alias ll 'ls -l' )\nll /tmp\n");
+
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "grouped command sequence should parse cleanly: {:#?}",
+            parsed.diagnostics
+        );
+        assert!(
+            parsed
+                .root
+                .children
+                .iter()
+                .any(|node| matches!(node.kind, NodeKind::Alias))
+        );
+        assert!(
+            parsed
+                .root
+                .children
+                .iter()
+                .any(|node| { matches!(&node.kind, NodeKind::Command { name } if name == "ll") })
+        );
     }
 }

@@ -322,6 +322,35 @@ mod tests {
     }
 
     #[test]
+    fn rename_arithmetic_assignment_preserves_operator_suffix() {
+        for text in [
+            "@ count++
+echo $count
+",
+            "@ count--
+echo $count
+",
+        ] {
+            let target = rename_target_at_position(
+                text,
+                Position {
+                    line: 0,
+                    character: 3,
+                },
+                &context(),
+            )
+            .expect("arithmetic assignment rename target");
+            assert_eq!(target.name, "count");
+
+            let edits = rename_edits_for_text(text, &target, "total", &context()).expect("edits");
+            assert_eq!(edits.len(), 2);
+            assert_eq!(edits[0].range.start.character, 2);
+            assert_eq!(edits[0].range.end.character, 7);
+            assert_eq!(edits[0].new_text, "total");
+        }
+    }
+
+    #[test]
     fn rename_alias_use_edits_command_word_only() {
         let text = "alias ll 'ls -l'\nll /tmp\n";
         let target = rename_target_at_position(

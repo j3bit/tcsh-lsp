@@ -52,22 +52,10 @@ pub fn diagnostics_for_text(text: &str, context: &AnalysisContext) -> Vec<Diagno
         }
     }
 
-    let label_names = labels.keys().cloned().collect::<HashSet<_>>();
-    for reference in model
-        .references
-        .iter()
-        .filter(|reference| reference.kind == ReferenceKind::GotoLabel)
-    {
-        if !label_names.contains(&reference.name) {
-            diagnostics.push(lsp_diagnostic(
-                text,
-                reference.span,
-                DiagnosticSeverity::WARNING,
-                "tcsh-lsp.semantic.unresolved_goto",
-                &format!("unresolved goto label `{}`", reference.name),
-            ));
-        }
-    }
+    // `goto` references are still recorded for navigation/reference features, but unresolved
+    // target publication is intentionally disabled by default. In day-to-day editing and syntax
+    // showcase files, unresolved goto often has too much reachability/context uncertainty for a
+    // low-noise diagnostic. A future strict semantic diagnostics category can re-enable it.
 
     for edge in &model.source_edges {
         if edge.confidence == Confidence::Certain && edge.resolved.is_none() {
@@ -100,6 +88,7 @@ pub fn diagnostics_for_text(text: &str, context: &AnalysisContext) -> Vec<Diagno
         .filter(|reference| reference.kind == ReferenceKind::VariableUse)
     {
         if is_conservative_shell_var_name(&reference.name)
+            && !is_predefined_tcsh_variable(&reference.name)
             && !assigned_vars.contains(&reference.name)
         {
             diagnostics.push(lsp_diagnostic(
@@ -240,6 +229,23 @@ fn is_conservative_shell_var_name(name: &str) -> bool {
             .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
+fn is_predefined_tcsh_variable(name: &str) -> bool {
+    matches!(
+        name,
+        "argv"
+            | "argc"
+            | "status"
+            | "cwd"
+            | "owd"
+            | "home"
+            | "shell"
+            | "user"
+            | "term"
+            | "version"
+            | "prompt"
+    )
+}
+
 fn lsp_diagnostic(
     text: &str,
     span: Span,
@@ -271,6 +277,39 @@ mod tests {
     }
 
     #[test]
+    fn tree_sitter_dogfood_examples_are_quiet() {
+        for path in [
+            "fixtures/corpus/parser/valid/tree_sitter_sample.tcsh",
+            "fixtures/corpus/parser/valid/tree_sitter_showcase.tcsh",
+        ] {
+            let text = std::fs::read_to_string(path).expect("read dogfood fixture");
+            let diagnostics = diagnostics_for_text(&text, &context());
+            assert!(
+                diagnostics.is_empty(),
+                "{path} produced diagnostics: {diagnostics:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn predefined_tcsh_variables_do_not_require_assignment() {
+        let text = "echo $argv[1] $argc $status $cwd $home
+";
+        let diagnostics = diagnostics_for_text(text, &context());
+        assert!(
+            diagnostics.iter().all(|diagnostic| {
+                match diagnostic.code.as_ref() {
+                    Some(NumberOrString::String(value)) => {
+                        !value.contains("variable_used_before_assignment")
+                    }
+                    _ => true,
+                }
+            }),
+            "predefined variables should not produce used-before-assignment diagnostics: {diagnostics:#?}"
+        );
+    }
+
+    #[test]
     fn reports_conservative_diagnostics() {
         let text = "endif\nstart:\nstart:\ngoto missing\nsource ./missing.csh\necho $foo\nset\n";
         let diagnostics = diagnostics_for_text(text, &context());
@@ -284,7 +323,6 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(codes.iter().any(|code| code.contains("unmatched_end")));
         assert!(codes.iter().any(|code| code.contains("duplicate_label")));
-        assert!(codes.iter().any(|code| code.contains("unresolved_goto")));
         assert!(codes.iter().any(|code| code.contains("unresolved_source")));
         assert!(
             codes

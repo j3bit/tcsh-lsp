@@ -105,6 +105,9 @@ fn visit_node(node: &Node, context: &AnalysisContext, model: &mut SemanticModel)
             record_word_reference_after_command(node, ReferenceKind::GotoLabel, model)
         }
         NodeKind::Source => record_source(node, context, model),
+        NodeKind::Command { name } if name == "@" => {
+            record_arithmetic_assignment(node, model);
+        }
         NodeKind::Command { name } if !name.is_empty() => {
             let span = nth_significant_word(node, 0)
                 .map(|(_, span)| span)
@@ -161,6 +164,35 @@ fn record_foreach_variable(node: &Node, model: &mut SemanticModel) {
             confidence: Confidence::Certain,
         });
     }
+}
+
+fn record_arithmetic_assignment(node: &Node, model: &mut SemanticModel) {
+    if let Some((name, span)) = nth_significant_word(node, 1) {
+        let normalized = name
+            .trim_end_matches("++")
+            .trim_end_matches("--")
+            .to_string();
+        if is_shell_identifier(&normalized) {
+            model.symbols.push(Symbol {
+                span: Span {
+                    start: span.start,
+                    end: span.start + normalized.len(),
+                },
+                name: normalized,
+                kind: SymbolKind::ShellVariable,
+                confidence: Confidence::Certain,
+            });
+        }
+    }
+}
+
+fn is_shell_identifier(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+        && name
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 fn record_source(node: &Node, context: &AnalysisContext, model: &mut SemanticModel) {
@@ -338,6 +370,44 @@ mod tests {
         assert!(model.references.iter().any(|reference| reference.kind
             == ReferenceKind::VariableUse
             && reference.name == "foo"));
+    }
+
+    #[test]
+    fn records_arithmetic_assignment_symbols() {
+        let parsed = parse(
+            "@ count = 1 + 2
+@ count++
+echo $count
+",
+        );
+        let context =
+            AnalysisContext::new(std::env::current_dir().unwrap(), TcshLspConfig::default());
+        let model = analyze(&parsed, &context);
+        assert!(
+            model.symbols.iter().any(|symbol| {
+                symbol.kind == SymbolKind::ShellVariable && symbol.name == "count"
+            })
+        );
+    }
+
+    #[test]
+    fn grouped_sequence_later_alias_remains_visible_to_semantics() {
+        let parsed = parse("( echo one ; alias ll 'ls -l' )\nll /tmp\n");
+        let context =
+            AnalysisContext::new(std::env::current_dir().unwrap(), TcshLspConfig::default());
+        let model = analyze(&parsed, &context);
+
+        assert!(
+            model
+                .symbols
+                .iter()
+                .any(|symbol| symbol.kind == SymbolKind::Alias && symbol.name == "ll")
+        );
+        assert!(
+            model.references.iter().any(
+                |reference| reference.kind == ReferenceKind::AliasUse && reference.name == "ll"
+            )
+        );
     }
 
     #[test]
