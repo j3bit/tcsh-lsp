@@ -174,9 +174,12 @@ fn record_arithmetic_assignment(node: &Node, model: &mut SemanticModel) {
             .to_string();
         if is_shell_identifier(&normalized) {
             model.symbols.push(Symbol {
+                span: Span {
+                    start: span.start,
+                    end: span.start + normalized.len(),
+                },
                 name: normalized,
                 kind: SymbolKind::ShellVariable,
-                span,
                 confidence: Confidence::Certain,
             });
         }
