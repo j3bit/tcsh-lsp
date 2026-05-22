@@ -502,16 +502,29 @@ echo !$var
     #[test]
     fn double_pipe_is_sequence_separator_not_pipeline() {
         let result = lex("echo one || echo two\necho one |& cat\necho one | cat\n");
-        assert!(result.errors.is_empty(), "unexpected lex errors: {:#?}", result.errors);
-        assert!(result.tokens.iter().any(|token| {
-            token.kind == TokenKind::Separator && token.text == "||"
-        }));
-        assert!(result.tokens.iter().any(|token| {
-            token.kind == TokenKind::Pipe && token.text == "|&"
-        }));
-        assert!(result.tokens.iter().any(|token| {
-            token.kind == TokenKind::Pipe && token.text == "|"
-        }));
+        assert!(
+            result.errors.is_empty(),
+            "unexpected lex errors: {:#?}",
+            result.errors
+        );
+        assert!(
+            result
+                .tokens
+                .iter()
+                .any(|token| { token.kind == TokenKind::Separator && token.text == "||" })
+        );
+        assert!(
+            result
+                .tokens
+                .iter()
+                .any(|token| { token.kind == TokenKind::Pipe && token.text == "|&" })
+        );
+        assert!(
+            result
+                .tokens
+                .iter()
+                .any(|token| { token.kind == TokenKind::Pipe && token.text == "|" })
+        );
     }
 
     #[test]
